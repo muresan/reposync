@@ -119,7 +119,12 @@ func mirrorGitHubCloudSourceRepositories(githubRepo *github.PushEventRepository)
 }
 
 func githubRepositoryFromRequest(r *http.Request) (*github.PushEventRepository, error) {
-	payload, err := github.ValidatePayload(r, []byte("pipeline"))
+	githubSecret := os.Getenv("GITHUB_SECRET")
+	if githubSecret == "" {
+		return nil, fmt.Errorf("The GITHUB_SECRET environment variable must be set and non-empty")
+	}
+
+	payload, err := github.ValidatePayload(r, []byte(githubSecret))
 	if err != nil {
 		return nil, fmt.Errorf("Unable to validate webhook payload: %s", err)
 	}
