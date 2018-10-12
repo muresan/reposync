@@ -111,7 +111,7 @@ func mirrorGitHubCloudSourceRepositories(githubRepo *github.PushEventRepository)
 		return fmt.Errorf("Unable to clone the %s repo: %s", *githubRepo.SSHURL, err)
 	}
 
-	cmd := exec.Command("ssh-agent", "bash", "-c", fmt.Sprintf("ssh-add %s ; git clone --mirror %s %s", sshkey.Name(), *githubRepo.SSHURL, dir)5)
+	cmd := exec.Command("ssh-agent", "bash", "-c", fmt.Sprintf("ssh-add %s ; git clone --mirror %s %s", sshkey.Name(), *githubRepo.SSHURL, dir))
 
 	output, err := cmd.CombinedOutput()
 	log.Printf("%s\n", output)
