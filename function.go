@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"strings"
 
 	"cloud.google.com/go/compute/metadata"
 	"github.com/google/go-github/github"
@@ -47,9 +48,9 @@ func mirrorGitHubCloudSourceRepositories(githubRepo *github.PushEventRepository)
 		return fmt.Errorf("The GCP_PROJECT environment variable must be set and non-empty")
 	}
 
-	githubSSHKey := os.Getenv("GITHUB_SSHKEY")
-	if githubSSHKey == "" {
-		return fmt.Errorf("The GITHUB_SSHKEY environment variable must be set and non-empty")
+	githubToken := os.Getenv("GITHUB_TOKEN")
+	if githubToken == "" {
+		return fmt.Errorf("The GITHUB_TOKEN environment variable must be set and non-empty")
 	}
 
 	serviceAccountEmail, serviceAccountToken, err := defaultServiceAccountCredentials()
@@ -91,32 +92,17 @@ func mirrorGitHubCloudSourceRepositories(githubRepo *github.PushEventRepository)
 		return err
 	}
 
-	sshkey, err := ioutil.TempFile("", "github-ssh-key")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(sshkey.Name())
-
-	_, err = sshkey.WriteString(fmt.Sprintf("%s\n",githubSSHKey))
-	if err != nil {
-		return err
-	}
-
-	if err := sshkey.Close(); err != nil {
-		return err
-	}
-
 	dir, err := ioutil.TempDir("", "function")
 	if err != nil {
-		return fmt.Errorf("Unable to clone the %s repo: %s", *githubRepo.SSHURL, err)
+		return fmt.Errorf("Unable to clone the %s repo: %s", *githubRepo.CloneURL, err)
 	}
 
-	cmd := exec.Command("ssh-agent", "bash", "-c", fmt.Sprintf("ssh-add %s ; git clone --mirror %s %s", sshkey.Name(), *githubRepo.SSHURL, dir))
-
+	tokenCloneURL := strings.Replace(*githubRepo.CloneURL, "github.com", fmt.Sprintf("oauth2:%s@github.com", githubToken), 1)
+	cmd := exec.Command("git", "clone", "--mirror", tokenCloneURL, dir)
 	output, err := cmd.CombinedOutput()
 	log.Printf("%s\n", output)
 	if err != nil {
-		return fmt.Errorf("Unable to clone the %s repo: %s", *githubRepo.SSHURL, err)
+		return fmt.Errorf("Unable to clone the %s repo: %s", *githubRepo.CloneURL, err)
 	}
 
 	cmd = exec.Command("git", "--git-dir", dir, "config", "credential.helper",
