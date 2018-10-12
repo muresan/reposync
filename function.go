@@ -47,6 +47,11 @@ func mirrorGitHubCloudSourceRepositories(githubRepo *github.PushEventRepository)
 		return fmt.Errorf("The GCP_PROJECT environment variable must be set and non-empty")
 	}
 
+	githubSSHKey := os.Getenv("GITHUB_SSHKEY")
+	if githubSSHKey == "" {
+		return fmt.Errorf("The GITHUB_SSHKEY environment variable must be set and non-empty")
+	}
+
 	serviceAccountEmail, serviceAccountToken, err := defaultServiceAccountCredentials()
 	if err != nil {
 		return err
@@ -86,22 +91,38 @@ func mirrorGitHubCloudSourceRepositories(githubRepo *github.PushEventRepository)
 		return err
 	}
 
-	dir, err := ioutil.TempDir("", "function")
+	sshkey, err := ioutil.TempFile("", "github-ssh-key")
 	if err != nil {
-		return fmt.Errorf("Unable to clone the %s repo: %s", *githubRepo.CloneURL, err)
+		return err
+	}
+	defer os.Remove(sshkey.Name())
+
+	_, err = sshkey.WriteString(fmt.Sprintf("%s\n",githubSSHKey))
+	if err != nil {
+		return err
 	}
 
-	cmd := exec.Command("git", "clone", "--mirror", *githubRepo.CloneURL, dir)
-	output, err := cmd.CombinedOutput()
-	log.Println(output)
+	if err := sshkey.Close(); err != nil {
+		return err
+	}
+
+	dir, err := ioutil.TempDir("", "function")
 	if err != nil {
-		return fmt.Errorf("Unable to clone the %s repo: %s", *githubRepo.CloneURL, err)
+		return fmt.Errorf("Unable to clone the %s repo: %s", *githubRepo.SSHURL, err)
+	}
+
+	cmd := exec.Command("ssh-agent", "bash", "-c", fmt.Sprintf("ssh-add %s ; git clone --mirror %s %s", sshkey.Name(), *githubRepo.SSHURL, dir)5)
+
+	output, err := cmd.CombinedOutput()
+	log.Printf("%s\n", output)
+	if err != nil {
+		return fmt.Errorf("Unable to clone the %s repo: %s", *githubRepo.SSHURL, err)
 	}
 
 	cmd = exec.Command("git", "--git-dir", dir, "config", "credential.helper",
 		fmt.Sprintf("store --file=%s", tmpfile.Name()))
 	output, err = cmd.CombinedOutput()
-	log.Println(output)
+	log.Printf("%s\n", output)
 	if err != nil {
 		return fmt.Errorf("Unable to create git credential.helper: %s", err)
 	}
@@ -110,7 +131,7 @@ func mirrorGitHubCloudSourceRepositories(githubRepo *github.PushEventRepository)
 
 	cmd = exec.Command("git", "--git-dir", dir, "push", "--mirror", "--repo", remoteUrl)
 	output, err = cmd.CombinedOutput()
-	log.Println(output)
+	log.Printf("%s\n", output)
 	if err != nil {
 		return fmt.Errorf("Unable to sync the %s source repo: %s", cloudSourceRepoName, err)
 	}
